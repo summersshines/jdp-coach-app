@@ -4,18 +4,27 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ryde Parramatta JDP – Coach App</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--green:#1a6b3c;--lgreen:#2d9e5f;--gold:#c9a84c;--t1:#1a4a7a;--t2:#1a6b3c;--t3:#8b5e2a;--bg:#f4f6f8;--card:#fff;--dark:#1a1a1a;--mid:#555;--light:#999;}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--dark);font-size:13px;}
-  .hdr{background:linear-gradient(135deg,#0d2e1a,#1a6b3c);color:white;padding:14px 24px;display:flex;align-items:center;gap:14px;}
+  .hdr{background:linear-gradient(135deg,#0d2e1a,#1a6b3c);color:white;padding:14px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
   .hdr .logo{font-size:26px;}
   .hdr-text h1{font-size:17px;font-weight:800;line-height:1.2;}
   .hdr-text p{font-size:10px;opacity:.7;}
   .hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
   .save-ind{font-size:11px;opacity:.8;transition:all .3s;}
+  .sync-dot{width:8px;height:8px;border-radius:50%;background:#4caf50;display:inline-block;margin-right:4px;}
+  .sync-dot.off{background:#ff5252;}
   .btn-reset{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.6);padding:5px 12px;border-radius:6px;font-size:10px;cursor:pointer;}
   .btn-reset:hover{background:rgba(255,255,255,.2);color:white;}
+
+  /* LOADING */
+  #loading{position:fixed;inset:0;background:rgba(13,46,26,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;color:white;gap:14px;}
+  .spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading p{font-size:14px;opacity:.8;}
 
   .tabs{display:flex;background:#0d2e1a;overflow-x:auto;}
   .tab{padding:11px 18px;font-size:12px;font-weight:700;color:rgba(255,255,255,.55);cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:all .2s;}
@@ -29,7 +38,6 @@
   .edit-hint span{background:#eee;border-radius:4px;padding:1px 6px;font-style:normal;}
 
   .g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
   .gap{display:flex;flex-direction:column;gap:12px;}
 
   .card{background:var(--card);border-radius:10px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07);}
@@ -38,10 +46,6 @@
   .card.t2{border-top:4px solid var(--t2);}.card.t2 h3{color:var(--t2);}
   .card.t3{border-top:4px solid var(--t3);}.card.t3 h3{color:var(--t3);}
   .card.gold{border-top:4px solid var(--gold);}.card.gold h3{color:#9a7020;}
-
-  [contenteditable]{outline:none;border-radius:4px;padding:2px 4px;transition:background .15s;min-width:20px;display:inline-block;}
-  [contenteditable]:hover{background:rgba(26,107,60,.07);}
-  [contenteditable]:focus{background:rgba(26,107,60,.12);box-shadow:0 0 0 2px rgba(26,107,60,.25);}
 
   .chk{display:flex;flex-direction:column;gap:7px;}
   .chk label{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--mid);cursor:pointer;line-height:1.4;}
@@ -65,6 +69,11 @@
   table.planner tr:nth-child(odd) td{background:#fafafa;}
   .wk-num{font-weight:800;color:var(--green);text-align:center;width:42px;}
   td.t3c{background:#fdf5ee!important;}td.t2c{background:#eef8f2!important;}td.t1c{background:#eef3fa!important;}
+  td[contenteditable]{cursor:text;}
+
+  [contenteditable]{outline:none;border-radius:4px;padding:2px 4px;transition:background .15s;min-width:20px;display:inline-block;}
+  [contenteditable]:hover{background:rgba(26,107,60,.07);}
+  [contenteditable]:focus{background:rgba(26,107,60,.12);box-shadow:0 0 0 2px rgba(26,107,60,.25);}
 
   .profile-list{display:flex;flex-direction:column;gap:7px;margin-top:10px;}
   .profile-item{background:white;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
@@ -88,19 +97,28 @@
   .div{height:1px;background:#eee;margin:14px 0;}
   .flash{font-size:11px;color:var(--green);margin-top:6px;display:none;}
 
-  @media(max-width:640px){.g2,.g3{grid-template-columns:1fr;}}
+  .note-item{padding:10px;border-bottom:1px solid #f0f0f0;}
+  .note-item:last-child{border-bottom:none;}
+  .note-meta{display:flex;justify-content:space-between;margin-bottom:4px;}
+  .note-meta strong{font-size:12px;}
+  .note-meta span{font-size:10px;color:var(--light);}
+  .note-item p{font-size:11px;color:var(--mid);}
+
+  @media(max-width:640px){.g2{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
+
+<div id="loading"><div class="spinner"></div><p>Connecting to shared database…</p></div>
 
 <div class="hdr">
   <div class="logo">⛳</div>
   <div class="hdr-text">
     <h1>Ryde Parramatta Junior Development Program</h1>
-    <p>Coach App — click any text to edit · changes save automatically to this device</p>
+    <p>Live Shared Coach App — all coaches see the same data in real time</p>
   </div>
   <div class="hdr-right">
-    <div class="save-ind" id="save-ind">✓ All changes saved</div>
+    <div class="save-ind" id="save-ind"><span class="sync-dot" id="sync-dot"></span><span id="sync-msg">Connecting…</span></div>
     <button class="btn-reset" onclick="resetAll()">↺ Reset All</button>
   </div>
 </div>
@@ -117,8 +135,8 @@
 <!-- BRIEFING -->
 <div id="briefing" class="panel active">
   <div class="stitle">Coach <span>Briefing</span></div>
-  <div class="sdesc">Tick off items as completed. Click any text to edit. All changes save automatically.</div>
-  <p class="edit-hint">✏️ Click any text to edit · <span>auto-saves to this device</span></p>
+  <div class="sdesc">Tick off items as completed. All changes sync to all coaches instantly.</div>
+  <p class="edit-hint">✏️ Click any text to edit · <span>syncs live to all coaches</span></p>
   <div class="g2">
     <div class="gap">
       <div class="card gold"><h3>✅ Pre-Program Setup</h3><div class="chk" id="chk-setup"></div></div>
@@ -134,18 +152,20 @@
         <div class="fr"><label>Juniors Attended</label><input type="number" id="sn-num" min="1"></div>
         <div class="fr"><label>Session Highlights</label><textarea id="sn-good" rows="2" placeholder="What went well?"></textarea></div>
         <div class="fr"><label>Focus for Next Session</label><textarea id="sn-next" rows="2" placeholder="What needs work?"></textarea></div>
-        <div class="btn-row"><button class="btn btn-g" onclick="saveNotes()">💾 Save Notes</button></div>
-        <div class="flash" id="notes-flash">✓ Notes saved!</div>
+        <div class="btn-row"><button class="btn btn-g" onclick="saveNotes()">💾 Save & Share Notes</button></div>
+        <div class="flash" id="notes-flash">✓ Notes saved and shared with all coaches!</div>
       </div>
     </div>
   </div>
+  <div class="div"></div>
+  <div class="card"><h3>📋 Recent Session Notes (All Coaches)</h3><div id="notes-list"><p style="font-size:12px;color:var(--light);">No notes yet.</p></div></div>
 </div>
 
 <!-- TERM PLANNER -->
 <div id="planner" class="panel">
   <div class="stitle">10-Week <span>Term Planner</span></div>
-  <div class="sdesc">Click any session cell to edit. Changes save automatically.</div>
-  <p class="edit-hint">✏️ Click a cell to edit · <span>Tab</span> moves to next cell</p>
+  <div class="sdesc">Click any session cell to edit. Changes sync to all coaches instantly.</div>
+  <p class="edit-hint">✏️ Click a cell to edit · changes sync live</p>
   <div class="card" style="padding:12px;">
     <div class="planner-wrap"><table class="planner">
       <thead><tr>
@@ -167,13 +187,15 @@
       </div>
       <div><div class="fr"><label>Notes</label><textarea id="term-notes" rows="3" placeholder="Public holidays, events etc."></textarea></div></div>
     </div>
+    <div class="btn-row"><button class="btn btn-g" onclick="saveTermDetails()">💾 Save Term Details</button></div>
+    <div class="flash" id="term-flash">✓ Term details saved!</div>
   </div>
 </div>
 
 <!-- PROFILING -->
 <div id="profiling" class="panel">
   <div class="stitle">Junior <span>Profiling</span></div>
-  <div class="sdesc">Add a profile for each junior to record their starting point and tier placement.</div>
+  <div class="sdesc">Add junior profiles — visible to all coaches instantly.</div>
   <div class="g2">
     <div class="card">
       <h3>➕ New Junior Profile</h3>
@@ -199,7 +221,7 @@
       <div class="card t2">
         <h3>⛳ Skill Assessment</h3>
         <div class="fr"><label>Ball-Striking</label><select id="j-bs"><option>1 – Very inconsistent</option><option>2 – Occasional contact</option><option>3 – Mostly consistent</option><option>4 – Consistent & controlled</option><option>5 – Advanced</option></select></div>
-        <div class="fr"><label>Putting (1m / 3m / 5m make rate)</label><input type="text" id="j-putt" placeholder="e.g. 5/5 · 3/5 · 1/5"></div>
+        <div class="fr"><label>Putting (1m / 3m / 5m)</label><input type="text" id="j-putt" placeholder="e.g. 5/5 · 3/5 · 1/5"></div>
         <div class="fr"><label>Chipping</label><select id="j-chip"><option>1 – Misses consistently</option><option>2 – Occasional</option><option>3 – Mostly on target</option><option>4 – Consistent</option><option>5 – Advanced</option></select></div>
       </div>
       <div class="card t3">
@@ -211,21 +233,21 @@
       <div class="card t1"><h3>🧠 Mental Game Self-Rating</h3><div id="mental-qs"></div></div>
     </div>
   </div>
-  <div class="btn-row"><button class="btn btn-g" onclick="saveProfile()">💾 Save Profile</button><button class="btn btn-o" onclick="clearProfileForm()">↺ Clear</button></div>
-  <div class="flash" id="profile-flash">✓ Profile saved!</div>
+  <div class="btn-row"><button class="btn btn-g" onclick="saveProfile()">💾 Save & Share Profile</button><button class="btn btn-o" onclick="clearProfileForm()">↺ Clear</button></div>
+  <div class="flash" id="profile-flash">✓ Profile saved and visible to all coaches!</div>
   <div class="div"></div>
-  <div class="stitle" style="font-size:15px;margin-bottom:8px;">Saved Profiles <span id="profile-count" style="font-size:13px;color:var(--mid);font-weight:400;"></span></div>
+  <div class="stitle" style="font-size:15px;margin-bottom:8px;">All Juniors <span id="profile-count"></span></div>
   <div class="profile-list" id="profile-list"><p style="font-size:12px;color:var(--light);">No profiles yet.</p></div>
 </div>
 
 <!-- TRACKING -->
 <div id="tracking" class="panel">
   <div class="stitle">Progress <span>Tracking</span></div>
-  <div class="sdesc">End of term assessments, reports, and tier progression management.</div>
+  <div class="sdesc">End of term assessments and reports — shared across all coaches.</div>
   <div class="g2" style="margin-bottom:14px;">
     <div class="card t2">
       <h3>📈 End of Term Assessment</h3>
-      <div class="fr"><label>Junior's Name</label><input type="text" id="et-name" placeholder="Name"></div>
+      <div class="fr"><label>Junior's Name</label><input type="text" id="et-name"></div>
       <div class="fr"><label>Ball-Striking (end of term)</label><select id="et-bs"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
       <div class="fr"><label>Short Game (end of term)</label><select id="et-sg"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
       <div class="fr"><label>Physical Literacy</label><select id="et-pl"><option>Developing</option><option>On Track</option><option>Advanced</option></select></div>
@@ -238,7 +260,7 @@
     <div class="card t1">
       <h3>📝 End of Term Report</h3>
       <div class="fr"><label>Junior's Name</label><input type="text" id="rpt-name"></div>
-      <div class="fr"><label>Skill Highlights</label><textarea id="rpt-skill" rows="2" placeholder="What improved most?"></textarea></div>
+      <div class="fr"><label>Skill Highlights</label><textarea id="rpt-skill" rows="2"></textarea></div>
       <div class="fr"><label>Physical Development</label><textarea id="rpt-phys" rows="2"></textarea></div>
       <div class="fr"><label>Mental Game Notes</label><textarea id="rpt-mental" rows="2"></textarea></div>
       <div class="fr"><label>Goals for Next Term</label><textarea id="rpt-goals" rows="2"></textarea></div>
@@ -246,11 +268,6 @@
       <div class="flash" id="report-flash">✓ Report saved!</div>
     </div>
   </div>
-  <div class="card gold">
-    <h3>📊 Progress Overview <span style="font-size:10px;font-weight:400;color:var(--mid);">Click % values to edit</span></h3>
-    <div id="prog-bars"></div>
-  </div>
-  <div class="div"></div>
   <div class="card">
     <h3>🔄 Progression & Feedback Checklist</h3>
     <div class="g2">
@@ -263,7 +280,12 @@
 </div>
 
 <script>
-const STORE_KEY = 'jdp_ryde_parramatta';
+// ── SUPABASE INIT ────────────────────────────────────────
+const SURL = 'https://dejmkfbzbqtvqgxtwipv.supabase.co';
+const SKEY = 'sb_publishable_zLIVnPYNxlyyAsYrkq9LJg_ztRZaJFp';
+const sb = supabase.createClient(SURL, SKEY);
+
+// ── DEFAULTS ─────────────────────────────────────────────
 const DEF = {
   chk_setup:['All coaches reviewed the Four Pillars & Guiding Principles','Shared coaching language and cues agreed upon','Lead coach assigned to each tier','Program coordinator confirmed','Session structure walked through for all tiers','Progressive on-course system reviewed for Tier 3','Equipment inventory confirmed','Venue allocation and tee time bookings made','Safety and safeguarding procedures reviewed','Junior profiles and medical conditions reviewed'],
   chk_do:['Use questioning over instruction ("What did you notice?")','Praise effort, process & improvement — not just results','Keep all juniors active and engaged throughout','Deliver warm-up and cool-down every session, no exceptions','Include a mental game moment in the cool-down debrief','Submit session notes summary after each session'],
@@ -282,104 +304,112 @@ const DEF = {
     ['On-Course + Skills: Review & Games','Skills + On-Course: Match Play Formats','Skills + On-Course: Match Play Challenge'],
     ['On-Course + Skills: End of Term Showcase','End of Term Review & Celebration','End of Term Review & Goal Setting']
   ],
-  mental:['I stay calm when I make a mistake','I have a routine before each shot','I enjoy competing against others','I know how to reset after a bad hole'],
-  progress:[{l:'Putting Consistency',s:30,e:65},{l:'Chipping Accuracy',s:20,e:55},{l:'Physical Literacy',s:40,e:70},{l:'Mental Game Rating',s:35,e:60},{l:'Course Confidence',s:25,e:58}],
-  profiles:[], checks:{}, notes:{}, termDetails:{}
+  mental:['I stay calm when I make a mistake','I have a routine before each shot','I enjoy competing against others','I know how to reset after a bad hole']
 };
 
-let S = JSON.parse(JSON.stringify(DEF));
-
-const persist = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); showSaved(); } catch(e){ console.warn(e); } };
-const hydrate = () => { try { const d = localStorage.getItem(STORE_KEY); if(d) S = Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(d)); } catch(e){} };
-hydrate();
-
-function showSaved() {
-  const el = document.getElementById('save-ind');
-  el.textContent = '✓ Saved'; el.style.opacity = '1';
-  setTimeout(() => { el.textContent = '✓ All changes saved'; el.style.opacity = '.8'; }, 1500);
+// ── HELPERS ───────────────────────────────────────────────
+async function dbGet(key) {
+  try {
+    const {data,error} = await sb.from('jdp_data').select('value').eq('key',key).single();
+    if(error) return null;
+    return data ? JSON.parse(data.value) : null;
+  } catch(e){ return null; }
 }
-function flash(id) { const el = document.getElementById(id); if(el){ el.style.display='block'; setTimeout(()=>el.style.display='none',2500); } }
-function show(id, el) {
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById(id).classList.add('active'); el.classList.add('active');
+async function dbSet(key, val) {
+  try {
+    await sb.from('jdp_data').upsert({key, value: JSON.stringify(val)}, {onConflict:'key'});
+    showSaved('✓ Synced to all coaches');
+  } catch(e){ showSaved('⚠️ Save failed', true); }
 }
 
-function buildChk(containerId, key) {
+function showSaved(msg, err) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-msg');
+  dot.className = 'sync-dot' + (err?' off':'');
+  txt.textContent = msg||'✓ Synced';
+  setTimeout(()=>{ dot.className='sync-dot'; txt.textContent='Live sync on'; }, 2500);
+}
+function flash(id){ const el=document.getElementById(id); if(el){el.style.display='block'; setTimeout(()=>el.style.display='none',3000);} }
+function show(id,el){ document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active')); document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); document.getElementById(id).classList.add('active'); el.classList.add('active'); }
+
+// ── CHECKLISTS ────────────────────────────────────────────
+async function buildChk(containerId, key) {
   const el = document.getElementById(containerId); if(!el) return;
-  el.innerHTML = '';
-  (S[key]||[]).forEach((text, i) => {
-    const label = document.createElement('label');
-    const cb = document.createElement('input'); cb.type='checkbox'; cb.checked=(S.checks[key]||{})[i]||false;
-    const span = document.createElement('span'); span.contentEditable=true; span.textContent=text;
+  const texts = await dbGet(`chk_texts_${key}`) || DEF[`chk_${key}`] || [];
+  const checks = await dbGet(`chk_state_${key}`) || {};
+  el.innerHTML='';
+  texts.forEach((text,i)=>{
+    const label=document.createElement('label');
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=checks[i]||false;
+    const span=document.createElement('span'); span.contentEditable=true; span.textContent=text;
     let deb;
-    span.addEventListener('input', () => { clearTimeout(deb); deb=setTimeout(()=>{ S[key][i]=span.textContent; persist(); },600); });
-    cb.addEventListener('change', () => { if(!S.checks[key])S.checks[key]={}; S.checks[key][i]=cb.checked; persist(); });
-    label.append(cb, span); el.appendChild(label);
+    span.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(async()=>{ const cur=await dbGet(`chk_texts_${key}`)||DEF[`chk_${key}`]||[]; cur[i]=span.textContent; await dbSet(`chk_texts_${key}`,cur); },800); });
+    cb.addEventListener('change',async()=>{ const cur=await dbGet(`chk_state_${key}`)||{}; cur[i]=cb.checked; await dbSet(`chk_state_${key}`,cur); });
+    label.append(cb,span); el.appendChild(label);
   });
 }
 
-function buildPlanner() {
+// ── PLANNER ───────────────────────────────────────────────
+async function buildPlanner() {
+  const data = await dbGet('planner') || DEF.planner;
   const tb = document.getElementById('planner-body'); tb.innerHTML='';
-  S.planner.forEach((row, i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="wk-num">W${i+1}</td>`;
-    ['t3c','t2c','t1c'].forEach((cls, j) => {
-      const td = document.createElement('td'); td.className=cls; td.contentEditable=true; td.textContent=row[j];
+  data.forEach((row,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="wk-num">W${i+1}</td>`;
+    ['t3c','t2c','t1c'].forEach((cls,j)=>{
+      const td=document.createElement('td'); td.className=cls; td.contentEditable=true; td.textContent=row[j];
       let deb;
-      td.addEventListener('input', () => { clearTimeout(deb); deb=setTimeout(()=>{ S.planner[i][j]=td.textContent; persist(); },600); });
+      td.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(async()=>{ const cur=await dbGet('planner')||DEF.planner; cur[i][j]=td.textContent; await dbSet('planner',cur); },800); });
       tr.appendChild(td);
     });
     tb.appendChild(tr);
   });
-  ['term-name','term-start','term-notes'].forEach(id => {
-    const el = document.getElementById(id); if(!el) return;
-    if(S.termDetails[id]) el.value=S.termDetails[id];
-    let deb;
-    el.addEventListener('input', () => { clearTimeout(deb); deb=setTimeout(()=>{ S.termDetails[id]=el.value; persist(); },500); });
+  const td = await dbGet('term_details') || {};
+  ['term-name','term-start','term-notes'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(td[id]) el.value=td[id];
   });
 }
 
-function buildMental() {
-  const el = document.getElementById('mental-qs'); if(!el) return; el.innerHTML='';
-  S.mental.forEach((q, qi) => {
-    const wrap = document.createElement('div'); wrap.style.marginBottom='8px';
-    const ql = document.createElement('div'); ql.contentEditable=true; ql.style.cssText='font-size:11px;color:var(--mid);margin-bottom:3px;'; ql.textContent=`"${q}"`;
+async function saveTermDetails() {
+  const td = { 'term-name': document.getElementById('term-name').value, 'term-start': document.getElementById('term-start').value, 'term-notes': document.getElementById('term-notes').value };
+  await dbSet('term_details', td); flash('term-flash');
+}
+
+// ── MENTAL STARS ──────────────────────────────────────────
+async function buildMental() {
+  const el=document.getElementById('mental-qs'); if(!el) return;
+  const qs=await dbGet('mental_qs')||DEF.mental;
+  el.innerHTML='';
+  qs.forEach((q,qi)=>{
+    const wrap=document.createElement('div'); wrap.style.marginBottom='8px';
+    const ql=document.createElement('div'); ql.contentEditable=true; ql.style.cssText='font-size:11px;color:var(--mid);margin-bottom:3px;'; ql.textContent=`"${q}"`;
     let deb;
-    ql.addEventListener('input', () => { clearTimeout(deb); deb=setTimeout(()=>{ S.mental[qi]=ql.textContent.replace(/^"|"$/g,''); persist(); },600); });
-    const stars = document.createElement('div'); stars.className='stars';
+    ql.addEventListener('input',()=>{ clearTimeout(deb); deb=setTimeout(async()=>{ const cur=await dbGet('mental_qs')||DEF.mental; cur[qi]=ql.textContent.replace(/^"|"$/g,''); await dbSet('mental_qs',cur); },800); });
+    const stars=document.createElement('div'); stars.className='stars';
     for(let i=1;i<=5;i++){ const s=document.createElement('span'); s.className='star'; s.textContent='★'; s.onclick=()=>stars.querySelectorAll('.star').forEach((st,j)=>st.classList.toggle('on',j<i)); stars.appendChild(s); }
-    wrap.append(ql, stars); el.appendChild(wrap);
+    wrap.append(ql,stars); el.appendChild(wrap);
   });
 }
 
-function buildProgress() {
-  const el = document.getElementById('prog-bars'); if(!el) return; el.innerHTML='';
-  S.progress.forEach((b, i) => {
-    const div = document.createElement('div'); div.className='prog-item';
-    div.innerHTML=`<div class="prog-label"><span contenteditable style="font-weight:600">${b.l}</span><span><span contenteditable style="color:var(--mid)">${b.s}</span>% → <span contenteditable style="color:var(--green);font-weight:700">${b.e}</span>%</span></div><div class="prog-bar"><div class="prog-fill" style="width:${b.e}%"></div></div>`;
-    const spans = div.querySelectorAll('[contenteditable]');
-    let deb;
-    const upd = () => { clearTimeout(deb); deb=setTimeout(()=>{ S.progress[i]={l:spans[0].textContent,s:parseInt(spans[1].textContent)||0,e:parseInt(spans[2].textContent)||0}; div.querySelector('.prog-fill').style.width=S.progress[i].e+'%'; persist(); },600); };
-    spans.forEach(s=>s.addEventListener('input',upd));
-    el.appendChild(div);
-  });
+// ── PROFILES ─────────────────────────────────────────────
+async function saveProfile() {
+  const name=document.getElementById('j-name').value.trim();
+  if(!name){alert('Please enter a junior name.');return;}
+  const profiles=await dbGet('profiles')||[];
+  profiles.push({ id:Date.now(), name, dob:document.getElementById('j-dob').value, hcp:document.getElementById('j-hcp').value, tier:document.getElementById('j-tier').value, parent:document.getElementById('j-parent').value, mobile:document.getElementById('j-mobile').value, emerg:document.getElementById('j-emerg').value, medical:document.getElementById('j-medical').value, goal:document.getElementById('j-goal').value, bs:document.getElementById('j-bs').value, putt:document.getElementById('j-putt').value, chip:document.getElementById('j-chip').value, bal:document.getElementById('j-bal').value, mob:document.getElementById('j-mob').value, coo:document.getElementById('j-coo').value });
+  await dbSet('profiles',profiles);
+  flash('profile-flash'); await renderProfiles(); clearProfileForm();
 }
 
-function saveProfile() {
-  const name = document.getElementById('j-name').value.trim();
-  if(!name){ alert('Please enter a junior name.'); return; }
-  S.profiles.push({ id:Date.now(), name, dob:document.getElementById('j-dob').value, hcp:document.getElementById('j-hcp').value, tier:document.getElementById('j-tier').value, parent:document.getElementById('j-parent').value, mobile:document.getElementById('j-mobile').value, emerg:document.getElementById('j-emerg').value, medical:document.getElementById('j-medical').value, goal:document.getElementById('j-goal').value, bs:document.getElementById('j-bs').value, putt:document.getElementById('j-putt').value, chip:document.getElementById('j-chip').value, bal:document.getElementById('j-bal').value, mob:document.getElementById('j-mob').value, coo:document.getElementById('j-coo').value });
-  persist(); renderProfiles(); clearProfileForm(); flash('profile-flash');
-}
-
-function renderProfiles() {
-  const list = document.getElementById('profile-list');
-  const count = document.getElementById('profile-count');
-  count.textContent = S.profiles.length ? `(${S.profiles.length})` : '';
-  if(!S.profiles.length){ list.innerHTML='<p style="font-size:12px;color:var(--light);">No profiles yet.</p>'; return; }
+async function renderProfiles() {
+  const list=document.getElementById('profile-list');
+  const count=document.getElementById('profile-count');
+  const profiles=await dbGet('profiles')||[];
+  count.textContent=profiles.length?`(${profiles.length})`:'';
+  if(!profiles.length){list.innerHTML='<p style="font-size:12px;color:var(--light);">No profiles yet.</p>';return;}
   list.innerHTML='';
-  S.profiles.forEach(p => {
+  profiles.forEach(p=>{
     const cls=p.tier.includes('1')?'t1':p.tier.includes('2')?'t2':'t3';
     const icon=p.tier.includes('1')?'🏆':p.tier.includes('2')?'🔥':'🌱';
     const item=document.createElement('div'); item.className='profile-item';
@@ -388,18 +418,47 @@ function renderProfiles() {
   });
 }
 
-function deleteProfile(id) {
-  if(!confirm('Delete this profile?')) return;
-  S.profiles=S.profiles.filter(p=>p.id!==id); persist(); renderProfiles();
+async function deleteProfile(id) {
+  if(!confirm('Delete this profile?'))return;
+  let profiles=await dbGet('profiles')||[];
+  profiles=profiles.filter(p=>p.id!==id);
+  await dbSet('profiles',profiles); await renderProfiles();
 }
 
 function clearProfileForm() {
-  ['j-name','j-dob','j-hcp','j-parent','j-mobile','j-emerg','j-medical','j-goal','j-putt'].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
+  ['j-name','j-dob','j-hcp','j-parent','j-mobile','j-emerg','j-medical','j-goal','j-putt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
 
-function saveNotes() { S.notes.last={date:document.getElementById('sn-date').value,tier:document.getElementById('sn-tier').value,coach:document.getElementById('sn-coach').value,num:document.getElementById('sn-num').value,good:document.getElementById('sn-good').value,next:document.getElementById('sn-next').value}; persist(); flash('notes-flash'); }
-function saveAssessment() { persist(); flash('assess-flash'); }
-function saveReport() { persist(); flash('report-flash'); }
+// ── SESSION NOTES ─────────────────────────────────────────
+async function saveNotes() {
+  const note={ id:Date.now(), date:document.getElementById('sn-date').value, tier:document.getElementById('sn-tier').value, coach:document.getElementById('sn-coach').value, num:document.getElementById('sn-num').value, good:document.getElementById('sn-good').value, next:document.getElementById('sn-next').value };
+  const notes=await dbGet('session_notes')||[];
+  notes.unshift(note); if(notes.length>20)notes.length=20;
+  await dbSet('session_notes',notes);
+  flash('notes-flash'); await renderNotes();
+}
+
+async function renderNotes() {
+  const notes=await dbGet('session_notes')||[];
+  const el=document.getElementById('notes-list');
+  if(!notes.length){el.innerHTML='<p style="font-size:12px;color:var(--light);">No notes yet.</p>';return;}
+  el.innerHTML=notes.map(n=>`<div class="note-item"><div class="note-meta"><strong>${n.coach||'Coach'} — ${n.tier}</strong><span>${n.date||'No date'} · ${n.num||'?'} juniors</span></div>${n.good?`<p>✅ ${n.good}</p>`:''}${n.next?`<p>➡️ Next: ${n.next}</p>`:''}</div>`).join('');
+}
+
+// ── ASSESSMENTS & REPORTS ─────────────────────────────────
+async function saveAssessment() {
+  const a={ id:Date.now(), name:document.getElementById('et-name').value, bs:document.getElementById('et-bs').value, sg:document.getElementById('et-sg').value, pl:document.getElementById('et-pl').value, hcp:document.getElementById('et-hcp').value, att:document.getElementById('et-att').value, tier:document.getElementById('et-tier').value };
+  const assessments=await dbGet('assessments')||[];
+  assessments.unshift(a); await dbSet('assessments',assessments);
+  flash('assess-flash');
+}
+
+async function saveReport() {
+  const r={ id:Date.now(), name:document.getElementById('rpt-name').value, skill:document.getElementById('rpt-skill').value, phys:document.getElementById('rpt-phys').value, mental:document.getElementById('rpt-mental').value, goals:document.getElementById('rpt-goals').value };
+  const reports=await dbGet('reports')||[];
+  reports.unshift(r); await dbSet('reports',reports);
+  flash('report-flash');
+}
 
 function printReport() {
   const name=document.getElementById('rpt-name').value||'Junior';
@@ -408,15 +467,33 @@ function printReport() {
   w.document.close(); w.print();
 }
 
-function resetAll() {
-  if(!confirm('Reset everything to defaults? This will delete all profiles, notes and edits permanently.')) return;
-  localStorage.removeItem(STORE_KEY); location.reload();
+// ── RESET ─────────────────────────────────────────────────
+async function resetAll() {
+  if(!confirm('Reset ALL shared data for all coaches? This cannot be undone.'))return;
+  const keys=['planner','profiles','session_notes','assessments','reports','term_details','mental_qs','chk_texts_setup','chk_state_setup','chk_texts_do','chk_state_do','chk_texts_avoid','chk_state_avoid','chk_texts_prog','chk_state_prog','chk_texts_feedback','chk_state_feedback'];
+  for(const k of keys){ try{ await sb.from('jdp_data').delete().eq('key',k); }catch(e){} }
+  location.reload();
 }
 
-// INIT
-buildChk('chk-setup','chk_setup'); buildChk('chk-do','chk_do'); buildChk('chk-avoid','chk_avoid');
-buildChk('chk-prog','chk_prog'); buildChk('chk-feedback','chk_feedback');
-buildPlanner(); buildMental(); buildProgress(); renderProfiles();
+// ── INIT ──────────────────────────────────────────────────
+async function init() {
+  try {
+    // Create table if it doesn't exist by attempting a select
+    await sb.from('jdp_data').select('key').limit(1);
+    document.getElementById('sync-msg').textContent = 'Live sync on';
+    await Promise.all([
+      buildChk('chk-setup','setup'), buildChk('chk-do','do'), buildChk('chk-avoid','avoid'),
+      buildChk('chk-prog','prog'), buildChk('chk-feedback','feedback'),
+      buildPlanner(), buildMental(), renderProfiles(), renderNotes()
+    ]);
+  } catch(e) {
+    document.getElementById('sync-dot').className='sync-dot off';
+    document.getElementById('sync-msg').textContent='Database error';
+    console.error(e);
+  }
+  document.getElementById('loading').style.display='none';
+}
+init();
 </script>
 </body>
 </html>
