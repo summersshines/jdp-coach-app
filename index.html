@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --beg:#8b5e2a;--t3:#1a6b3c;--t2:#1a4a7a;--t1:#6b2fa0;--gold:#c9a84c;--private:#3d4a5c;
+    --beg:#8b5e2a;--t3:#1a6b3c;--t2:#1a4a7a;--t1:#6b2fa0;--gold:#c9a84c;--private:#3d4a5c;--blue:#1a4a7a;
     --bg:#f4f6f8;--card:#fff;--dark:#1a1a1a;--mid:#555;--light:#999;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -443,7 +443,7 @@
   <div class="card gold">
     <h3>📌 Term Details</h3>
     <div class="g2">
-      <div><div class="fr"><label>Term Name / Year</label><input type="text" id="term-name" placeholder="e.g. Term 2, 2026"></div><div class="fr"><label>Term Start Date</label><input type="date" id="term-start"></div></div>
+      <div><div class="fr"><label>Term Name / Year</label><input type="text" id="term-name" placeholder="e.g. Term 2, 2026"></div><div class="fr"><label>Term Start Date</label><input type="date" id="term-start"></div><div class="fr"><label>Reporting Period Start</label><input type="date" id="report-period-start"></div></div>
       <div><div class="fr"><label>Notes</label><textarea id="term-notes" rows="3" placeholder="Public holidays, events etc."></textarea></div></div>
     </div>
     <div class="btn-row">
@@ -662,6 +662,7 @@
       </div>
     </div>
 
+    <div id="attendance-line" style="display:none;font-size:12px;font-weight:700;color:var(--blue);background:#e8f0fb;border-radius:8px;padding:8px 12px;margin-bottom:14px;"></div>
     <!-- ⛳ ON-COURSE ASSESSMENT -->
     <div class="profile-section oc-section-wrap" id="oc-collapsible-wrap">
       <div class="profile-section-header" onclick="toggleProfileSection('oc-collapsible')">
@@ -701,7 +702,8 @@
           <label>Note</label>
           <textarea id="cn-text" rows="3" placeholder="e.g. Great session today — showing real improvement in short game. Parent mentioned they're keen to enter the club championship." style="font-size:13px;"></textarea>
         </div>
-        <button class="btn-sm btn-sm-g" onclick="addCoachNote()" style="margin-bottom:16px;">+ Add Note</button>
+        <button class="btn-sm btn-sm-g" id="cn-submit-btn" onclick="addCoachNote()" style="margin-bottom:16px;">+ Add Note</button>
+        <button class="btn-sm" id="cn-cancel-btn" onclick="cancelEditCoachNote()" style="margin-bottom:16px;margin-left:6px;display:none;background:#eee;color:#555;border:none;">Cancel</button>
         <div id="cn-list"></div>
       </div>
     </div>
@@ -1140,6 +1142,16 @@ function updateBenchSummary(){
   var avg=(allLevels.reduce(function(a,b){return a+b;},0)/allLevels.length);var band=getBand(Math.round(avg));
   el.textContent=allLevels.length+' test'+(allLevels.length!==1?'s':'')+' logged · Avg L'+avg.toFixed(1)+(band?' — '+band.label:'');
 }
+function updateAttendanceLine(){
+  var id=document.getElementById('j-id').value;
+  var el=document.getElementById('attendance-line');
+  if(!id){el.style.display='none';return;}
+  var name=document.getElementById('j-name').value;
+  var squad=document.getElementById('j-tier').value;
+  var att=getJuniorAttendance(name,squad);
+  el.style.display='block';
+  el.textContent=att.total===0?'📋 No sessions logged yet this term':'📋 '+att.attended+'/'+att.total+' sessions this term';
+}
 function updateMentalSummary(){
   var el=document.getElementById('mental-section-summary');if(!el)return;
   var ratings=getMentalRatings();var total=0,count=0;Object.keys(ratings).forEach(function(k){if(ratings[k]>0){total+=ratings[k];count++;}});
@@ -1241,13 +1253,38 @@ function populateCoachDropdowns(){var snCoach=document.getElementById('sn-coach'
 async function addCoach(){var input=document.getElementById('coach-name-input');var name=input?input.value.trim():'';if(!name)return;if(coachList.indexOf(name)>=0){alert('That coach is already in the list.');return;}coachList.push(name);input.value='';await dbSet('coach_list',coachList);renderCoachList();populateCoachDropdowns();flash('coach-flash');}
 async function removeCoach(i){if(!confirm('Remove '+coachList[i]+' from the coach list?'))return;coachList.splice(i,1);await dbSet('coach_list',coachList);renderCoachList();populateCoachDropdowns();flash('coach-flash');}
 
+// ── ATTENDANCE & REPORTING PERIOD ──
+function getTermCutoffDate(){
+  var ts=document.getElementById('report-period-start')?document.getElementById('report-period-start').value:'';
+  if(ts){
+    var tsDate=new Date(ts);
+    var now=new Date();now.setHours(0,0,0,0);
+    if(tsDate<=now)return tsDate;
+  }
+  var d=new Date();d.setDate(d.getDate()-110);return d;
+}
+function getJuniorAttendance(name,squad){
+  var cutoff=getTermCutoffDate();
+  var squadNotes=allSessionNotes.filter(function(n){return n.tier===squad&&(!n.date||new Date(n.date)>=cutoff);});
+  var byDate={};
+  squadNotes.forEach(function(n){
+    var d=n.date||'';
+    if(!byDate[d])byDate[d]=[];
+    if(n.juniors&&n.juniors.length)byDate[d]=byDate[d].concat(n.juniors);
+  });
+  var dates=Object.keys(byDate);
+  var total=dates.length;
+  var attended=dates.filter(function(d){return byDate[d].indexOf(name)>-1;}).length;
+  return{attended:attended,total:total};
+}
+
 // ── PLANNER ──
 const BEG_FOCUSES=['Full Swing','Short Game','Putting'];
 function makeBegDefault(){var rows=[];for(var i=0;i<10;i++){rows.push({type:'Skills Session',focus:BEG_FOCUSES[i%3],coach:'',notes:''});}return rows;}
 const DEF_PLANNER={beg:makeBegDefault(),t3:[{type:'On-Course + Skills',focus:'Grip & Putting Games',coach:'',notes:''},{type:'On-Course only',focus:'Progressive on-course play',coach:'',notes:''},{type:'On-Course + Skills',focus:'Chipping & Targets',coach:'',notes:''},{type:'On-Course only',focus:'Progressive on-course play',coach:'',notes:''},{type:'On-Course + Skills',focus:'Swing Basics',coach:'',notes:''},{type:'On-Course only',focus:'Progressive on-course play',coach:'',notes:''},{type:'On-Course + Skills',focus:'Fun Competition',coach:'',notes:''},{type:'On-Course only',focus:'Progressive on-course play',coach:'',notes:''},{type:'On-Course + Skills',focus:'Review & Games',coach:'',notes:''},{type:'On-Course + Skills',focus:'End of Term Showcase',coach:'',notes:''}],t2:[{type:'Skills + On-Course',focus:'Intro & Assessment',coach:'',notes:''},{type:'— No session —',focus:'',coach:'',notes:''},{type:'Skills + On-Course',focus:'Short Game Focus',coach:'',notes:''},{type:'— No session —',focus:'',coach:'',notes:''},{type:'Skills + On-Course',focus:'Decision Making',coach:'',notes:''},{type:'— No session —',focus:'',coach:'',notes:''},{type:'Skills + On-Course',focus:'Pre-Shot Routine',coach:'',notes:''},{type:'— No session —',focus:'',coach:'',notes:''},{type:'Skills + On-Course',focus:'Match Play Formats',coach:'',notes:''},{type:'Skills + On-Course',focus:'End of Term Review',coach:'',notes:''}],t1:[{type:'Skills + On-Course',focus:'Goals & Assessment',coach:'',notes:''},{type:'Skills + On-Course',focus:'Ball-Striking Focus',coach:'',notes:''},{type:'Skills + On-Course',focus:'Short Game Pressure',coach:'',notes:''},{type:'Skills + On-Course',focus:'Course Management',coach:'',notes:''},{type:'Skills + On-Course',focus:'Competition Simulation',coach:'',notes:''},{type:'Skills + On-Course',focus:'Mental Game Focus',coach:'',notes:''},{type:'Skills + On-Course',focus:'Advanced Short Game',coach:'',notes:''},{type:'Skills + On-Course',focus:'Stats & Self-Analysis',coach:'',notes:''},{type:'Skills + On-Course',focus:'Match Play Challenge',coach:'',notes:''},{type:'Skills + On-Course',focus:'End of Term Review & Goal Setting',coach:'',notes:''}]};
 function showPlannerTier(tier){['beg','t3','t2','t1'].forEach(function(t){document.getElementById('planner-'+t).style.display=t===tier?'block':'none';var btn=document.getElementById('ptab-'+t);var tc=getTierCfgByKey(t);if(t===tier){btn.style.background=tc.bg;btn.style.color=tc.color;btn.style.borderBottom='3px solid '+tc.border;}else{btn.style.background='#f0f0f0';btn.style.color='#999';btn.style.borderBottom='3px solid transparent';}});}
-async function buildPlanner(){for(var ti=0;ti<JDP_TIERS.length;ti++){var tier=JDP_TIERS[ti].key;var tc=JDP_TIERS[ti];var data=await dbGet('planner_'+tier)||DEF_PLANNER[tier];livePlannerData[tier]=data;var tb=document.getElementById('planner-body-'+tier);if(!tb)continue;tb.innerHTML='';data.forEach(function(row,i){var tr=document.createElement('tr');var wkTd=document.createElement('td');wkTd.className='wk-num';wkTd.style.background=tc.plannerBg;wkTd.textContent='W'+(i+1);tr.appendChild(wkTd);['type','focus','coach','notes'].forEach(function(col){var td=document.createElement('td');td.style.background=tc.plannerBg;td.style.verticalAlign='top';if(col==='coach'){var sel=document.createElement('select');sel.className='planner-coach-sel';sel.innerHTML='<option value="">— Select —</option>';coachList.forEach(function(name){var o=document.createElement('option');o.value=name;o.textContent=name;if(name===row.coach)o.selected=true;sel.appendChild(o);});var deb;(function(ct,ci){sel.addEventListener('change',function(){clearTimeout(deb);deb=setTimeout(async function(){var cur=await dbGet('planner_'+ct)||DEF_PLANNER[ct];cur[ci].coach=sel.value;await dbSet('planner_'+ct,cur);livePlannerData[ct]=cur;},400);});})(tier,i);td.appendChild(sel);}else{var div=document.createElement('div');div.contentEditable=true;div.textContent=row[col]||'';div.style.cssText='outline:none;min-height:20px;padding:2px 4px;border-radius:4px;';div.addEventListener('focus',function(){div.style.background='rgba(26,107,60,.1)';div.style.boxShadow='0 0 0 2px rgba(26,107,60,.25)';});div.addEventListener('blur',function(){div.style.background='';div.style.boxShadow='';});var deb;(function(ct,ci,cc){div.addEventListener('input',function(){clearTimeout(deb);deb=setTimeout(async function(){var cur=await dbGet('planner_'+ct)||DEF_PLANNER[ct];cur[ci][cc]=div.textContent;await dbSet('planner_'+ct,cur);livePlannerData[ct]=cur;},800);});})(tier,i,col);td.appendChild(div);}tr.appendChild(td);});tb.appendChild(tr);});}var td=await dbGet('term_details')||{};['term-name','term-start','term-notes'].forEach(function(id){var el=document.getElementById(id);if(el&&td[id])el.value=td[id];});}
-async function saveTermDetails(){var td={'term-name':document.getElementById('term-name').value,'term-start':document.getElementById('term-start').value,'term-notes':document.getElementById('term-notes').value};await dbSet('term_details',td);flash('term-flash');}
+async function buildPlanner(){for(var ti=0;ti<JDP_TIERS.length;ti++){var tier=JDP_TIERS[ti].key;var tc=JDP_TIERS[ti];var data=await dbGet('planner_'+tier)||DEF_PLANNER[tier];livePlannerData[tier]=data;var tb=document.getElementById('planner-body-'+tier);if(!tb)continue;tb.innerHTML='';data.forEach(function(row,i){var tr=document.createElement('tr');var wkTd=document.createElement('td');wkTd.className='wk-num';wkTd.style.background=tc.plannerBg;wkTd.textContent='W'+(i+1);tr.appendChild(wkTd);['type','focus','coach','notes'].forEach(function(col){var td=document.createElement('td');td.style.background=tc.plannerBg;td.style.verticalAlign='top';if(col==='coach'){var sel=document.createElement('select');sel.className='planner-coach-sel';sel.innerHTML='<option value="">— Select —</option>';coachList.forEach(function(name){var o=document.createElement('option');o.value=name;o.textContent=name;if(name===row.coach)o.selected=true;sel.appendChild(o);});var deb;(function(ct,ci){sel.addEventListener('change',function(){clearTimeout(deb);deb=setTimeout(async function(){var cur=await dbGet('planner_'+ct)||DEF_PLANNER[ct];cur[ci].coach=sel.value;await dbSet('planner_'+ct,cur);livePlannerData[ct]=cur;},400);});})(tier,i);td.appendChild(sel);}else{var div=document.createElement('div');div.contentEditable=true;div.textContent=row[col]||'';div.style.cssText='outline:none;min-height:20px;padding:2px 4px;border-radius:4px;';div.addEventListener('focus',function(){div.style.background='rgba(26,107,60,.1)';div.style.boxShadow='0 0 0 2px rgba(26,107,60,.25)';});div.addEventListener('blur',function(){div.style.background='';div.style.boxShadow='';});var deb;(function(ct,ci,cc){div.addEventListener('input',function(){clearTimeout(deb);deb=setTimeout(async function(){var cur=await dbGet('planner_'+ct)||DEF_PLANNER[ct];cur[ci][cc]=div.textContent;await dbSet('planner_'+ct,cur);livePlannerData[ct]=cur;},800);});})(tier,i,col);td.appendChild(div);}tr.appendChild(td);});tb.appendChild(tr);});}var td=await dbGet('term_details')||{};['term-name','term-start','term-notes','report-period-start'].forEach(function(id){var el=document.getElementById(id);if(el&&td[id])el.value=td[id];});}
+async function saveTermDetails(){var td={'term-name':document.getElementById('term-name').value,'term-start':document.getElementById('term-start').value,'term-notes':document.getElementById('term-notes').value,'report-period-start':document.getElementById('report-period-start').value};await dbSet('term_details',td);flash('term-flash');}
 async function copyTierPlan(fromKey,toKey){if(!fromKey){alert('Please select a tier to copy from');return;}var toName=getTierCfgByKey(toKey).label;var toData=livePlannerData[toKey];if(toData){var hasContent=toData.some(function(r){return(r.type&&r.type!=='')||(r.focus&&r.focus!=='')||(r.coach&&r.coach!=='')||(r.notes&&r.notes!=='');});if(hasContent&&!confirm('This will overwrite the existing '+toName+' plan. Are you sure?'))return;}var fromData=livePlannerData[fromKey]||DEF_PLANNER[fromKey];var copied=fromData.map(function(r){return{type:r.type||'',focus:r.focus||'',coach:r.coach||'',notes:r.notes||''};});await dbSet('planner_'+toKey,copied);livePlannerData[toKey]=copied;await buildPlanner();flash('planner-copy-flash-'+toKey);}
 async function copyLastTerm(){if(!confirm('Copy this term\'s planner structure forward?\n\nSession types and focus areas will be kept. Coach assignments and Term Details will be cleared.'))return;for(var ti=0;ti<JDP_TIERS.length;ti++){var tier=JDP_TIERS[ti].key;var current=await dbGet('planner_'+tier)||DEF_PLANNER[tier];var copied=current.map(function(row){return{type:row.type||'',focus:row.focus||'',coach:'',notes:''};});await dbSet('planner_'+tier,copied);livePlannerData[tier]=copied;}await dbSet('term_details',{'term-name':'','term-start':'','term-notes':''});['term-name','term-start','term-notes'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});await buildPlanner();flash('term-flash');alert('✅ Done! Carried forward. Update Term Details for the new term.');}
 
@@ -1273,6 +1310,7 @@ function setMentalRatings(r){document.querySelectorAll('.mental-card').forEach(f
 // ── BENCH UI ──
 var benchLogs={};
 var coachNotes=[];
+var editingNoteId=null;
 function today(){return new Date().toISOString().slice(0,10);}
 function formatDate(d){if(!d)return'';var p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
 function buildBenchSection(containerId,tests,gender){var el=document.getElementById(containerId);el.innerHTML='';tests.forEach(function(test){var logs=benchLogs[test.key]||[];var sorted=logs.slice().sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});var latest=sorted.length?sorted[sorted.length-1]:null;var first=sorted.length>1?sorted[0]:null;var deltaHtml='';if(first&&latest&&first.level&&latest.level){var diff=latest.level-first.level;if(diff>0)deltaHtml='<span class="bench-delta up">▲ +'+diff+' level'+(diff>1?'s':'')+'</span>';else if(diff<0)deltaHtml='<span class="bench-delta down">▼ '+diff+' level'+(Math.abs(diff)>1?'s':'')+'</span>';else deltaHtml='<span class="bench-delta flat">— No change</span>';}var currentHtml='<span style="font-size:11px;color:var(--light);">No entries yet</span>';if(latest&&latest.level){var band=getBand(latest.level);currentHtml='<span style="font-size:12px;font-weight:800;color:var(--dark);">Level '+latest.level+'</span>'+(band?'<span class="bench-badge '+band.cls+'" style="margin-left:6px;">'+band.label+'</span>':'')+(deltaHtml?' '+deltaHtml:'');}var card=document.createElement('div');card.className='bench-test-card';var hdr=document.createElement('div');hdr.className='bench-test-header';hdr.innerHTML='<div class="bench-test-name">'+test.label+'<small>'+test.unit+'</small></div><div class="bench-current">'+currentHtml+'<button class="bench-info-btn" onclick="toggleDesc(\''+test.key+'\')">ℹ️</button></div>';var body=document.createElement('div');body.className='bench-entry-area';var desc=document.createElement('div');desc.className='bench-desc';desc.id='bench-desc-'+test.key;desc.textContent=test.desc;var entryRow=document.createElement('div');entryRow.className='bench-entry-row';if(test.dual){var f1=document.createElement('div');f1.className='fr';f1.innerHTML='<label>'+test.f1+'</label><input type="number" id="bench-v1-'+test.key+'" placeholder="—" style="font-size:15px;padding:8px 10px;">';var f2=document.createElement('div');f2.className='fr';f2.innerHTML='<label>'+test.f2+'</label><input type="number" id="bench-v2-'+test.key+'" placeholder="—" style="font-size:15px;padding:8px 10px;">';entryRow.appendChild(f1);entryRow.appendChild(f2);}else{var f1=document.createElement('div');f1.className='fr';f1.innerHTML='<label>Score</label><input type="number" id="bench-v1-'+test.key+'" placeholder="—" style="font-size:15px;padding:8px 10px;">';entryRow.appendChild(f1);}var dateField=document.createElement('div');dateField.className='fr';dateField.innerHTML='<label>Date</label><input type="date" id="bench-date-'+test.key+'" value="'+today()+'" style="font-size:13px;padding:8px 10px;">';var logBtn=document.createElement('div');logBtn.style.cssText='display:flex;align-items:flex-end;';logBtn.innerHTML='<button class="btn-sm btn-sm-g" onclick="logBenchEntry(\''+test.key+'\',\''+gender+'\')" style="white-space:nowrap;">+ Log Entry</button>';entryRow.appendChild(dateField);entryRow.appendChild(logBtn);var logList=document.createElement('div');logList.className='bench-log';logList.id='bench-log-'+test.key;body.appendChild(desc);body.appendChild(entryRow);body.appendChild(logList);card.appendChild(hdr);card.appendChild(body);el.appendChild(card);renderBenchLog(test.key,gender);});}
@@ -1287,6 +1325,7 @@ function rebuildBench(){var g=document.getElementById('j-gender')?document.getEl
 document.addEventListener('change',function(e){if(e.target.id==='j-gender'){rebuildBench();updateRadarCharts(benchLogs,e.target.value);}});
 
 // ── PROFILES ──
+var allSessionNotes=[];
 var allProfiles=[];var showArchived=false;
 function sortByLastName(arr){return arr.slice().sort(function(a,b){var an=(a.name||'').trim().split(' ');var bn=(b.name||'').trim().split(' ');var al=an.length>1?an[an.length-1]:an[0];var bl=bn.length>1?bn[bn.length-1]:bn[0];return al.toLowerCase()<bl.toLowerCase()?-1:al.toLowerCase()>bl.toLowerCase()?1:0;});}
 async function loadAllProfiles(){allProfiles=await dbGet('profiles')||[];populateJuniorDropdown();populateCHSDropdown();renderProfiles();}
@@ -1310,7 +1349,7 @@ function loadJuniorProfile(){
     var body=document.getElementById(id);var chev=document.getElementById(id+'-chev');
     if(body)body.classList.remove('open');if(chev)chev.classList.remove('open');
   });
-  updateOCSummary();updateBenchSummary();updateCoachNotesSummary();updateMentalSummary();
+  updateOCSummary();updateBenchSummary();updateCoachNotesSummary();updateMentalSummary();updateAttendanceLine();
   window.scrollTo({top:document.getElementById('radar-wrap').offsetTop-80,behavior:'smooth'});
 }
 function newJuniorForm(){
@@ -1325,7 +1364,7 @@ function newJuniorForm(){
     var body=document.getElementById(id);var chev=document.getElementById(id+'-chev');
     if(body)body.classList.remove('open');if(chev)chev.classList.remove('open');
   });
-  updateOCSummary();updateBenchSummary();updateCoachNotesSummary();updateMentalSummary();
+  updateOCSummary();updateBenchSummary();updateCoachNotesSummary();updateMentalSummary();updateAttendanceLine();
 }
 function openVideo(){var url=document.getElementById('j-video').value;if(url)window.open(url,'_blank');}
 async function saveProfile(){
@@ -1396,7 +1435,7 @@ function renderCoachNotes(){
     html+='<div style="background:#fafafa;border-radius:8px;padding:10px 12px;margin-bottom:8px;border:1px solid #eee;position:relative;">';
     html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
     html+='<span style="font-size:11px;font-weight:800;color:var(--t2);">'+formatDate(n.date)+'</span>';
-    html+='<span onclick="deleteCoachNote('+n.id+')" style="cursor:pointer;color:#ccc;font-size:14px;padding:2px 4px;line-height:1;" title="Delete note">✕</span>';
+    html+='<span style="display:flex;gap:4px;align-items:center;"><span onclick="editCoachNote('+n.id+')" style="cursor:pointer;color:#999;font-size:13px;padding:2px 4px;line-height:1;" title="Edit note">✏️</span><span onclick="deleteCoachNote('+n.id+')" style="cursor:pointer;color:#ccc;font-size:14px;padding:2px 4px;line-height:1;" title="Delete note">✕</span></span>';
     html+='</div>';
     html+='<p style="font-size:12px;color:var(--dark);line-height:1.6;white-space:pre-wrap;">'+n.text+'</p>';
     html+='</div>';
@@ -1408,7 +1447,15 @@ function addCoachNote(){
   var text=document.getElementById('cn-text')?document.getElementById('cn-text').value.trim():'';
   var date=document.getElementById('cn-date')?document.getElementById('cn-date').value:'';
   if(!text){alert('Please enter a note before adding.');return;}
-  coachNotes.unshift({id:Date.now(),date:date||today(),text:text});
+  if(editingNoteId){
+    var idx=coachNotes.findIndex(function(n){return n.id===editingNoteId;});
+    if(idx>=0){coachNotes[idx].date=date||today();coachNotes[idx].text=text;}
+    editingNoteId=null;
+    document.getElementById('cn-submit-btn').textContent='+ Add Note';
+    document.getElementById('cn-cancel-btn').style.display='none';
+  }else{
+    coachNotes.unshift({id:Date.now(),date:date||today(),text:text});
+  }
   document.getElementById('cn-text').value='';
   document.getElementById('cn-date').value=today();
   renderCoachNotes();updateCoachNotesSummary();
@@ -1418,19 +1465,37 @@ function deleteCoachNote(id){
   coachNotes=coachNotes.filter(function(n){return n.id!==id;});
   renderCoachNotes();updateCoachNotesSummary();
 }
+function editCoachNote(id){
+  var n=coachNotes.find(function(x){return x.id===id;});if(!n)return;
+  editingNoteId=id;
+  document.getElementById('cn-date').value=n.date||today();
+  document.getElementById('cn-text').value=n.text||'';
+  document.getElementById('cn-submit-btn').textContent='Update Note';
+  document.getElementById('cn-cancel-btn').style.display='inline-block';
+  document.getElementById('cn-text').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditCoachNote(){
+  editingNoteId=null;
+  document.getElementById('cn-date').value=today();
+  document.getElementById('cn-text').value='';
+  document.getElementById('cn-submit-btn').textContent='+ Add Note';
+  document.getElementById('cn-cancel-btn').style.display='none';
+}
 
 // ── NOTES ──
 async function saveNotes(){
   var names=getSelectedJuniorNames();
   var note={id:Date.now(),date:document.getElementById('sn-date').value,tier:document.getElementById('sn-tier').value,coach:document.getElementById('sn-coach').value,num:names.length||0,juniors:names,good:document.getElementById('sn-good').value,next:document.getElementById('sn-next').value};
-  var notes=await dbGet('session_notes')||[];notes.unshift(note);if(notes.length>20)notes.length=20;
+  var notes=await dbGet('session_notes')||[];notes.unshift(note);if(notes.length>40)notes.length=40;
   await dbSet('session_notes',notes);
   document.getElementById('sn-junior-checkboxes').innerHTML='';document.getElementById('sn-junior-picker').style.display='none';
   var btn=document.getElementById('sn-junior-toggle');btn.textContent='👇 Select juniors attended…';btn.style.color='var(--mid)';btn.style.borderColor='#ddd';document.getElementById('sn-selected-names').style.display='none';
   flash('notes-flash');await renderNotes();
 }
 async function renderNotes(){
-  var notes=await dbGet('session_notes')||[];var el=document.getElementById('notes-list');
+  var notes=await dbGet('session_notes')||[];
+  allSessionNotes=notes;
+  var el=document.getElementById('notes-list');
   if(!notes.length){el.innerHTML='<p style="font-size:12px;color:var(--light);">No notes yet.</p>';return;}
   el.innerHTML=notes.map(function(n){var attendLine=n.juniors&&n.juniors.length?n.juniors.length+' juniors: '+n.juniors.join(', '):(n.num?n.num+' juniors':'—');return'<div class="note-item"><div class="note-meta"><strong>'+(n.coach||'Coach')+' — '+n.tier+'</strong><span>'+(formatDate(n.date)||'No date')+'</span></div><p style="font-size:11px;color:var(--light);margin-bottom:4px;">👥 '+attendLine+'</p>'+(n.good?'<p>✅ '+n.good+'</p>':'')+(n.next?'<p>➡️ Next: '+n.next+'</p>':'')+'</div>';}).join('');
 }
@@ -1452,10 +1517,31 @@ function generateReport(){
 function buildTemplateReport(p){
   var firstName=p.name?p.name.split(' ')[0]:p.name;var g=p.gender==='F'?'she':'he';var gHis=p.gender==='F'?'her':'his';var gHer=p.gender==='F'?'her':'him';
   var tier=p.tier||'Beginner';var parent=p.parent?p.parent.split(' ')[0]:'there';var isPrivateStudent=tier==='Private';
-  var improved=[],strong=[],allLogged=[];
-  ALL_BENCH_TESTS.forEach(function(t){var logs=(p.benchLogs||{})[t.key];if(!logs||!logs.length)return;var sorted=logs.slice().sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});var latest=sorted[sorted.length-1];var first=sorted.length>1?sorted[0]:null;if(!latest.level)return;var band=getBand(latest.level);var entry={label:t.label,level:latest.level,band:band?band.label:''};allLogged.push(entry);if(first&&first.level&&latest.level>first.level){entry.from=first.level;improved.push(entry);}else if(latest.level>=7){strong.push(entry);}});
-  // include CHS in report if logged
-  if(p.chsLogs&&p.chsLogs.length){var chsLatest=p.chsLogs[p.chsLogs.length-1];var chsFirst=p.chsLogs.length>1?p.chsLogs[0]:null;var chsLv=calcCHSLevel(chsLatest.mph,p.gender);if(chsLv){var chsBand=getBand(chsLv);var chsEntry={label:'Club Head Speed ('+chsLatest.mph+'mph)',level:chsLv,band:chsBand?chsBand.label:''};allLogged.push(chsEntry);if(chsFirst){var chsFirstLv=calcCHSLevel(chsFirst.mph,p.gender);if(chsFirstLv&&chsLv>chsFirstLv){chsEntry.from=chsFirstLv;improved.push(chsEntry);}else if(chsLv>=7){strong.push(chsEntry);}}}}
+  var att=getJuniorAttendance(p.name,p.tier);
+  var attSentence=att.total>0?(firstName+' attended '+att.attended+' of '+att.total+' sessions this term. '):'';
+  var improvedList=[],stableList=[],needsFocusList=[],newList=[];
+  function pushBenchEntry(label,level,band,fromLevel){
+    var bandTxt=band?' ('+band+')':'';
+    if(fromLevel===null||fromLevel===undefined){newList.push(label+' — Level '+level+bandTxt);}
+    else if(level>fromLevel){improvedList.push(label+' — Level '+level+bandTxt+', up from Level '+fromLevel);}
+    else if(level<fromLevel){needsFocusList.push(label+' — Level '+level+bandTxt+', down from Level '+fromLevel);}
+    else{stableList.push(label+' — Level '+level+bandTxt);}
+  }
+  ALL_BENCH_TESTS.forEach(function(t){
+    var logs=(p.benchLogs||{})[t.key];if(!logs||!logs.length)return;
+    var latest=logs[logs.length-1];if(!latest.level)return;
+    var band=getBand(latest.level);
+    var fromLevel=null;if(logs.length>1&&logs[0].level)fromLevel=logs[0].level;
+    pushBenchEntry(t.label,latest.level,band?band.label:'',fromLevel);
+  });
+  if(p.chsLogs&&p.chsLogs.length){
+    var cl=p.chsLogs[p.chsLogs.length-1];var clv=calcCHSLevel(cl.mph,p.gender);
+    if(clv){
+      var cb=getBand(clv);var chsFrom=null;
+      if(p.chsLogs.length>1){var cf=p.chsLogs[0];var cfv=calcCHSLevel(cf.mph,p.gender);if(cfv)chsFrom=cfv;}
+      pushBenchEntry('Club Head Speed ('+cl.mph+'mph)',clv,cb?cb.label:'',chsFrom);
+    }
+  }
   var mentalRatings=p.mentalRatings||{};var mentalTotal=0,mentalCount=0;Object.keys(mentalRatings).forEach(function(k){if(mentalRatings[k]>0){mentalTotal+=mentalRatings[k];mentalCount++;}});var mentalAvg=mentalCount>0?(mentalTotal/mentalCount):0;
   var mentalSummary='';if(mentalAvg>=4)mentalSummary=firstName+' consistently demonstrated a strong mental approach throughout the term.';else if(mentalAvg>=3)mentalSummary=firstName+' showed a positive mental approach during the term.';else if(mentalAvg>0)mentalSummary=firstName+' is developing '+gHis+' mental game awareness.';if(p.mentalMore)mentalSummary+=' One strength '+g+' identified was: "'+p.mentalMore+'".';
   var ocSummary='';if(p.oc){if(isPrivateStudent&&p.oc.privateNotes){ocSummary=p.oc.privateNotes;}else{var isBegOrT3=tier==='Beginner'||tier.startsWith('Tier 3');if(isBegOrT3&&p.oc.stages){var passed=p.oc.stages.filter(function(s){return s.passed;});if(passed.length>0){ocSummary=firstName+' passed '+passed.length+' of 4 on-course stages this term';if(p.oc.nineHoleLogs&&p.oc.nineHoleLogs.length){var best=Math.min.apply(null,p.oc.nineHoleLogs.map(function(r){return r.score;}));ocSummary+=', with a best 9-hole score of '+best+' shots';}ocSummary+='.';}else if(p.oc.nineHoleLogs&&p.oc.nineHoleLogs.length){var best2=Math.min.apply(null,p.oc.nineHoleLogs.map(function(r){return r.score;}));ocSummary=firstName+' has been getting out on course, recording a best 9-hole score of '+best2+' shots this term.';}}else if(tier.startsWith('Tier 2')&&p.oc.t2notes){ocSummary='On course, '+p.oc.t2notes;}else if(p.oc.t1notes){ocSummary='On course, '+p.oc.t1notes;}}}
@@ -1466,9 +1552,25 @@ function buildTemplateReport(p){
   else{openings=['It has been a pleasure coaching '+firstName+' this term in our '+tier+' program at Ryde Parramatta Golf Club.','What a wonderful term it has been for '+firstName+' in our '+tier+' program here at Ryde Parramatta Golf Club.','I am delighted to share '+firstName+'\'s end of term report from our '+tier+' program at Ryde Parramatta Golf Club.'];}
   var opening=openings[Math.floor(Math.random()*openings.length)];
   if(p.goal)opening+=' '+firstName+(isPrivateStudent?' has been working towards '+gHis+' goal of "'+p.goal+'" and the progress has been great to see.':' came in with a clear goal in mind — "'+p.goal+'" — and '+g+' has worked hard towards that throughout the term.');
+  opening=attSentence+opening;
   lines.push(opening);lines.push('');
-  if(allLogged.length>0){var benchPara='';if(improved.length>0){benchPara='In our benchmarking assessments, '+firstName+' showed some real improvement this term. ';var desc=improved.slice(0,3).map(function(e){return e.label+' (now Level '+e.level+' — '+e.band+', up from Level '+e.from+')';});benchPara+=g.charAt(0).toUpperCase()+g.slice(1)+' improved in '+desc.join(', ')+'.';}else if(strong.length>0){benchPara='In our benchmarking assessments, '+firstName+' is performing at a strong level. ';var desc2=strong.slice(0,3).map(function(e){return e.label+' (Level '+e.level+' — '+e.band+')';});benchPara+=g.charAt(0).toUpperCase()+g.slice(1)+' is achieving '+desc2.join(', ')+'.';}else{benchPara='We completed '+firstName+'\'s benchmarking assessments this term, establishing some solid baseline levels across '+allLogged.length+' test'+(allLogged.length>1?'s':'')+'. These results give us a great foundation to build on.';}if(ocSummary)benchPara+=' '+ocSummary;lines.push(benchPara);lines.push('');}else if(ocSummary){lines.push(ocSummary);lines.push('');}
+  var hasAnyBench=improvedList.length||stableList.length||needsFocusList.length||newList.length;
+  if(hasAnyBench){
+    lines.push('Benchmark Results:');
+    if(improvedList.length){lines.push('Improvement:');improvedList.forEach(function(b){lines.push('- '+b);});lines.push('');}
+    if(stableList.length){lines.push('Stable:');stableList.forEach(function(b){lines.push('- '+b);});lines.push('');}
+    if(needsFocusList.length){lines.push('Areas to keep developing:');needsFocusList.forEach(function(b){lines.push('- '+b);});lines.push('');}
+    if(newList.length){lines.push('Newly assessed this term:');newList.forEach(function(b){lines.push('- '+b);});lines.push('');}
+  }
+  if(ocSummary){lines.push(ocSummary);lines.push('');}
   if(mentalSummary){lines.push(mentalSummary);if(p.mentalLearn)lines[lines.length-1]+=' When reflecting on '+gHis+' development, '+firstName+' noted: "'+p.mentalLearn+'".';lines.push('');}
+  var noteCutoff=getTermCutoffDate();
+  var recentNotes=(p.coachNotes||[]).filter(function(n){return!n.date||new Date(n.date)>=noteCutoff;}).slice().sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
+  if(recentNotes.length){
+    lines.push('Coach Notes:');
+    recentNotes.forEach(function(n){lines.push('- '+(n.date?formatDate(n.date)+': ':'')+n.text);});
+    lines.push('');
+  }
   var focusPara='Looking ahead, ';if(p.mentalLess){focusPara+='one area we will continue to develop is '+p.mentalLess.toLowerCase()+'. ';}else if(isPrivateStudent){focusPara+='we will continue building on the foundations we have established and working towards '+gHis+' goals. ';}else if(tier==='Beginner'){focusPara+='we will continue building '+gHis+' love of the game across full swing, short game, and putting, developing those core fundamentals that set up a great golf journey. ';}else if(tier.startsWith('Tier 3')){focusPara+='we will continue building '+gHis+' on-course confidence and progressing through the development stages. ';}else if(tier.startsWith('Tier 2')){focusPara+='we will focus on sharpening '+gHis+' decision-making and short game consistency. ';}else{focusPara+='we will continue pushing '+gHis+' performance benchmarks and competition preparation. ';}
   focusPara+='With the effort and attitude '+firstName+' has shown this term, I have no doubt '+g+' will continue to grow as a golfer and as a person.';lines.push(focusPara);lines.push('');
   if(isPrivateStudent){lines.push('Thank you for your continued support of '+firstName+'\'s golf journey — it makes a real difference. I look forward to our next session.');}else{lines.push('Thank you for your continued support of '+firstName+'\'s golf journey — it makes a real difference. We look forward to seeing '+gHer+' back on the course next term.');}
